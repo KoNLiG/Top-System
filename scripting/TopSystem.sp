@@ -8,15 +8,13 @@
 #define PLUGIN_AUTHOR "KoNLiG"
 #define PLUGIN_VERSION "1.00"
 
+/* Settings */
+
 #define PREFIX " \x04[Top]\x01"
 #define PREFIX_MENU "[Top]"
 
-/* Settings */
-
 #define CONFIG_PATH "addons/sourcemod/configs/TopData.cfg"
 #define DATABASE_ENTRY "csgotest"
-
-#define DEFAULT_POINTS 0
 
 /*  */
 
@@ -38,6 +36,8 @@ enum struct Top
 
 ArrayList g_arTopData;
 
+ConVar g_cvCategoriesStartPoints;
+
 enum struct Client
 {
 	char szAuth[64];
@@ -54,14 +54,14 @@ enum struct Client
 		delete this.iPoints;
 		this.iPoints = new ArrayList();
 		for (int iCurrentTop = 0; iCurrentTop < g_arTopData.Length; iCurrentTop++) {
-			this.iPoints.Push(DEFAULT_POINTS);
+			this.iPoints.Push(g_cvCategoriesStartPoints.IntValue);
 		}
 	}
 }
 
 Client g_esClientData[MAXPLAYERS + 1];
 
-Database g_dbDatabase = null;
+Database g_dbDatabase;
 
 GlobalForward g_fwdOnTopReset;
 
@@ -69,7 +69,7 @@ ConVar g_cvTopClientsAmount;
 ConVar g_cvDaysUntilReset;
 ConVar g_cvPrintProgressMessages;
 
-int g_iResetTime = 0;
+int g_iResetTime;
 
 public Plugin myinfo = 
 {
@@ -89,8 +89,7 @@ public void OnPluginStart()
 	g_cvTopClientsAmount = CreateConVar("top_show_clients_amount", "50", "Amount of clients that will be shown on the quests menu.", _, true, 5.0, true, 100.0);
 	g_cvDaysUntilReset = CreateConVar("top_days_until_reset", "7", "Amount of days until every top category resets, 0 to disable the reset.", _, true, 0.0, true, 90.0);
 	g_cvPrintProgressMessages = CreateConVar("top_print_progress_messages", "1", "If true, every progress change will be print with a chat message, 0 To disable the print.", _, true, 0.0, true, 1.0);
-	
-	AutoExecConfig(true, "TopSystem");
+	g_cvCategoriesStartPoints = CreateConVar("top_categories_start_points", "0", "Starting points to set for every category once its created.");
 	
 	RegConsoleCmd("sm_tops", Command_Tops, "Access the Tops list menu.");
 	RegConsoleCmd("sm_top", Command_Tops, "Access the Tops list menu. (An Alias)");
@@ -101,6 +100,8 @@ public void OnPluginStart()
 	BuildPath(Path_SM, sDirPath, sizeof(sDirPath), szConfigPath);
 	File hFile = OpenFile(sDirPath, "a+");
 	delete hFile;
+	
+	AutoExecConfig(true, "TopSystem");
 }
 
 public void OnPluginEnd()
@@ -175,6 +176,7 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 	CreateNative("Top_GetPoints", Native_GetTopPoints);
 	CreateNative("Top_AddPoints", Native_AddTopPoints);
 	CreateNative("Top_TakePoints", Native_TakeTopPoints);
+	
 	g_fwdOnTopReset = CreateGlobalForward("Top_OnTopReset", ET_Event, Param_Cell);
 	
 	RegPluginLibrary("TopSystem");
@@ -268,14 +270,16 @@ public int Native_TakeTopPoints(Handle plugin, int numParams)
 	if (iPoints < 0) {
 		return ThrowNativeError(SP_ERROR_NATIVE, "Invalid points amount (%d)", iPlayerIndex, iPoints);
 	}
-	if (g_esClientData[iPlayerIndex].iPoints.Get(iTopId) - iPoints <= 0) {
-		g_esClientData[iPlayerIndex].iPoints.Set(iTopId, DEFAULT_POINTS);
+	
+	Top TopData; TopData = GetTopByIndex(iTopId);
+	
+	if (g_esClientData[iPlayerIndex].iPoints.Get(iTopId) - iPoints <= TopData.iDefaultPoints) {
+		g_esClientData[iPlayerIndex].iPoints.Set(iTopId, TopData.iDefaultPoints);
 		return 0;
 	}
 	
 	g_esClientData[iPlayerIndex].iPoints.Set(iTopId, g_esClientData[iPlayerIndex].iPoints.Get(iTopId) - iPoints);
 	
-	Top TopData; TopData = GetTopByIndex(iTopId);
 	if (g_cvPrintProgressMessages.BoolValue && bBroadcast) {
 		PrintToChat(iPlayerIndex, "%s You have lost \x02-%d\x01 points in \x0E%s\x01 top.", PREFIX, iPoints, TopData.szName);
 	}
@@ -300,10 +304,11 @@ void showTopsMainMenu(int iPlayerIndex)
 	Format(szItem, sizeof(szItem), "• Resets In: %s\n ", fResetTime <= 0.09 ? "Next Map!":szItemInfo);
 	menu.SetTitle("%s Top System - Main Menu\n%s ", PREFIX_MENU, g_cvDaysUntilReset.IntValue ? szItem:"");
 	
+	Top CurrentTopData;
 	for (int iCurrentTop = 0; iCurrentTop < g_arTopData.Length; iCurrentTop++)
 	{
 		IntToString(iCurrentTop, szItemInfo, sizeof(szItemInfo));
-		Top CurrentTopData; CurrentTopData = GetTopByIndex(iCurrentTop);
+		CurrentTopData = GetTopByIndex(iCurrentTop);
 		menu.AddItem(szItemInfo, CurrentTopData.szName);
 	}
 	
@@ -327,6 +332,11 @@ public void SQL_TopMenu_CB(Database db, DBResultSet results, const char[] error,
 	}
 	
 	int iPlayerIndex = GetClientFromSerial(dPack.ReadCell());
+	
+	if (!iPlayerIndex) {
+		return;
+	}
+	
 	int iTopId = dPack.ReadCell();
 	dPack.Close();
 	
@@ -517,7 +527,7 @@ public void SQL_CB_OnDatabaseConnected(Database db, const char[] error, any data
 
 void SQL_FetchUser(int iPlayerIndex)
 {
-	char szQuery[512];
+	char szQuery[128];
 	g_dbDatabase.Format(szQuery, sizeof(szQuery), "SELECT * FROM `top_stats` WHERE `steam_id` = '%s'", g_esClientData[iPlayerIndex].szAuth);
 	g_dbDatabase.Query(SQL_FetchUser_CB, szQuery, GetClientSerial(iPlayerIndex));
 }
@@ -530,8 +540,13 @@ public void SQL_FetchUser_CB(Database db, DBResultSet results, const char[] erro
 		return;
 	}
 	
-	char szUnique[128], szQuery[512];
+	char szUnique[128], szQuery[256];
 	int iPlayerIndex = GetClientFromSerial(serial);
+	
+	if (!iPlayerIndex) {
+		return;
+	}
+	
 	bool[] bIsRowExist = new bool[g_arTopData.Length];
 	
 	while (results.FetchRow())
@@ -567,7 +582,7 @@ public void SQL_FetchUser_CB(Database db, DBResultSet results, const char[] erro
 
 void SQL_UpdateUser(int iPlayerIndex)
 {
-	char szQuery[512];
+	char szQuery[128];
 	for (int iCurrentTop = 0; iCurrentTop < g_arTopData.Length; iCurrentTop++)
 	{
 		DataPack dPack = new DataPack();
@@ -592,7 +607,7 @@ public void SQL_UpdateUser_CB(Database db, DBResultSet results, const char[] err
 	int iTopId = dPack.ReadCell();
 	dPack.Close();
 	
-	char szQuery[512];
+	char szQuery[256];
 	if (results.FetchRow())
 	{
 		g_dbDatabase.Format(szQuery, sizeof(szQuery), "UPDATE `top_stats` SET `name` = '%s', `points` = %d WHERE `steam_id` = '%s' AND `unique` = '%s'", 
@@ -686,7 +701,7 @@ public void KV_SetTopData(Database db, DBResultSet results, const char[] error, 
 	
 	KV_LoadTops();
 	
-	char szQuery[512];
+	char szQuery[128];
 	g_dbDatabase.Format(szQuery, sizeof(szQuery), "DELETE FROM `top_stats` WHERE `unique` = '%s'", GetTopByIndex(iTopId).szUnique);
 	g_dbDatabase.Query(SQL_CheckForErrors, szQuery);
 	
@@ -718,9 +733,9 @@ void KV_InitData()
 
 /* */
 
-/* Functions & Stocks */
+/* Functions */
 
-stock int GetTopId(const char[] unique)
+int GetTopId(const char[] unique)
 {
 	Top CurrentTopData;
 	for (int iCurrentTop = 0; iCurrentTop < g_arTopData.Length; iCurrentTop++)
@@ -733,7 +748,7 @@ stock int GetTopId(const char[] unique)
 	return -1;
 }
 
-stock int GetClientFromAuth(const char[] auth)
+int GetClientFromAuth(const char[] auth)
 {
 	char szAuth[64];
 	for (int iCurrentClient = 1; iCurrentClient <= MaxClients; iCurrentClient++)
@@ -758,7 +773,7 @@ any[] GetTopByIndex(int index)
 
 void ResetTop(int iPlayerIndex, int iTopId)
 {
-	char szQuery[512];
+	char szQuery[128];
 	Top TopData; TopData = GetTopByIndex(iTopId);
 	g_dbDatabase.Format(szQuery, sizeof(szQuery), "SELECT * FROM `top_stats` WHERE `unique` = '%s' ORDER BY `points` DESC LIMIT 1", TopData.szUnique);
 	g_dbDatabase.Query(KV_SetTopData, szQuery, iTopId);

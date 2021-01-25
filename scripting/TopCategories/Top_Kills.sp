@@ -36,7 +36,7 @@ public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast
 	int iVictimIndex = GetClientOfUserId(event.GetInt("userid"));
 	int iKillerIndex = GetClientOfUserId(event.GetInt("attacker"));
 	
-	if (iKillerIndex != iVictimIndex) {
+	if (iKillerIndex && iKillerIndex != iVictimIndex) {
 		Top_AddPoints(iKillerIndex, g_iTopId, 1);
 	}
 } 
