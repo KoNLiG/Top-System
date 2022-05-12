@@ -562,7 +562,7 @@ int Handler_Tops(Menu menu, MenuAction action, int client, int itemNum)
 
 void showLastWinnersMenu(int client)
 {
-	char szItem[32];
+	char szItem[MAX_NAME_LENGTH * 2];
 	Menu menu = new Menu(Handler_LastWinners);
 	menu.SetTitle("%s Top System - Last Top Winners\n ", PREFIX_MENU);
 	
