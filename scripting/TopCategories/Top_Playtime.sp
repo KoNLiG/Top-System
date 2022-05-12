@@ -1,23 +1,20 @@
-#pragma semicolon 1
-#pragma newdecls required
-
 #include <sourcemod>
 #include <TopSystem>
 
-#define PLUGIN_AUTHOR "KoNLiG"
-#define PLUGIN_VERSION "1.00"
+#pragma semicolon 1
+#pragma newdecls required
 
-Handle g_hMinuteTimer[MAXPLAYERS + 1] =  { INVALID_HANDLE, ... };
+Handle g_hMinuteTimer[MAXPLAYERS + 1] = { INVALID_HANDLE, ... };
 
 int g_iTopId = -1;
 
 public Plugin myinfo = 
 {
 	name = "[CS:GO] Top System - Top Playtime", 
-	author = PLUGIN_AUTHOR, 
+	author = "KoNLiG", 
 	description = "Top playtime for the top system.", 
-	version = PLUGIN_VERSION, 
-	url = "https://steamcommunity.com/id/KoNLiGrL/"
+	version = "1.0.0", 
+	url = "https://steamcommunity.com/id/KoNLiG/ || KoNLiG#6417"
 };
 
 public void OnLibraryAdded(const char[] name)
@@ -30,38 +27,37 @@ public void OnLibraryAdded(const char[] name)
 
 public void OnMapStart()
 {
-	for (int iCurrentClient = 1; iCurrentClient <= MaxClients; iCurrentClient++)
+	for (int current_client = 1; current_client <= MaxClients; current_client++)
 	{
-		if (IsClientInGame(iCurrentClient)) {
-			if (g_hMinuteTimer[iCurrentClient] != INVALID_HANDLE) {
-				KillTimer(g_hMinuteTimer[iCurrentClient]);
-			}
-			g_hMinuteTimer[iCurrentClient] = INVALID_HANDLE;
+		if (IsClientInGame(current_client))
+		{
+			delete g_hMinuteTimer[current_client];
 		}
 	}
 }
 
-public void OnClientPostAdminCheck(int iPlayerIndex)
+public void OnClientPostAdminCheck(int client)
 {
-	g_hMinuteTimer[iPlayerIndex] = CreateTimer(60.0, Timer_GivePoint, GetClientSerial(iPlayerIndex), TIMER_REPEAT);
+	g_hMinuteTimer[client] = CreateTimer(60.0, Timer_GivePoint, GetClientUserId(client), TIMER_REPEAT);
 }
 
-public void OnClientDisconnect(int iPlayerIndex)
+public void OnClientDisconnect(int client)
 {
-	if (g_hMinuteTimer[iPlayerIndex] != INVALID_HANDLE) {
-		KillTimer(g_hMinuteTimer[iPlayerIndex]);
+	delete g_hMinuteTimer[client];
+}
+
+Action Timer_GivePoint(Handle timer, int userid)
+{
+	int client = GetClientOfUserId(userid);
+	if (client)
+	{
+		Top_AddPoints(client, g_iTopId, 1, false);
 	}
-	g_hMinuteTimer[iPlayerIndex] = INVALID_HANDLE;
-}
-
-public Action Timer_GivePoint(Handle hTimer, any serial)
-{
-	int iPlayerIndex = GetClientFromSerial(serial);
-	if (iPlayerIndex != 0 && IsClientInGame(iPlayerIndex)) {
-		Top_AddPoints(iPlayerIndex, g_iTopId, 1, false);
-	} else {
-		g_hMinuteTimer[iPlayerIndex] = INVALID_HANDLE;
+	else
+	{
+		g_hMinuteTimer[client] = INVALID_HANDLE;
 		return Plugin_Stop;
 	}
+	
 	return Plugin_Continue;
 } 

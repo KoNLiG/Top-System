@@ -1,21 +1,18 @@
-#pragma semicolon 1
-#pragma newdecls required
-
 #include <sourcemod>
 #include <TopSystem>
 
-#define PLUGIN_AUTHOR "KoNLiG"
-#define PLUGIN_VERSION "1.00"
+#pragma semicolon 1
+#pragma newdecls required
 
 int g_iTopId = -1;
 
 public Plugin myinfo = 
 {
 	name = "[CS:GO] Top System - Top Awp Kills", 
-	author = PLUGIN_AUTHOR, 
-	description = "", 
-	version = PLUGIN_VERSION, 
-	url = "https://steamcommunity.com/id/KoNLiGrL/"
+	author = "KoNLiG", 
+	description = "Top System module.", 
+	version = "1.0.0", 
+	url = "https://steamcommunity.com/id/KoNLiG/ || KoNLiG#6417"
 };
 
 public void OnPluginStart()
